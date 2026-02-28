@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Polyglot Transformer</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; overflow: hidden; }
+    body { background: #050508; font-family: 'JetBrains Mono', monospace; -webkit-app-region: no-drag; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:.7;transform:scale(1)} 50%{opacity:1;transform:scale(1.1)} }
+    @keyframes slideIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes shimmer { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    @keyframes gradientShift { 0%,100%{opacity:.12} 50%{opacity:.22} }
+    @keyframes toastIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes copyFlash { 0%,100%{background:#22c55e22} 50%{background:#22c55e44} }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .lang-col { animation: slideIn .35s ease forwards; opacity: 0; }
+    .run-btn, .mode-btn, .lang-toggle, .score-btn { transition: all .15s ease; }
+    .run-btn:hover:not(:disabled) { filter: brightness(1.3); transform: translateY(-1px) scale(1.03); }
+    .run-btn:active:not(:disabled) { transform: scale(.97); }
+    .mode-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.2); }
+    .mode-btn:active:not(:disabled) { transform: scale(.96); }
+    .lang-toggle:hover { transform: scale(1.06); }
+    .score-btn:hover:not(:disabled) { filter: brightness(1.2); transform: scale(1.03); }
+    .icon-btn { transition: all .12s ease; background: none; cursor: pointer; }
+    .icon-btn:hover { filter: brightness(1.4); transform: scale(1.1); }
+    .icon-btn:active { transform: scale(.95); }
+    .copy-flash { animation: copyFlash .6s ease; }
+    .titlebar { -webkit-app-region: drag; user-select: none; }
+    .no-drag { -webkit-app-region: no-drag; }
+
+    /* Scrollbars per language */
+    .panel-python textarea::-webkit-scrollbar,
+    .panel-python pre::-webkit-scrollbar { width: 5px; height: 5px; }
+    .panel-python textarea::-webkit-scrollbar-track { background: #0d1b2e; }
+    .panel-python textarea::-webkit-scrollbar-thumb { background: #1e4a7a; border-radius: 3px; }
+
+    .panel-ruby textarea::-webkit-scrollbar,
+    .panel-ruby pre::-webkit-scrollbar { width: 5px; height: 5px; }
+    .panel-ruby textarea::-webkit-scrollbar-track { background: #1e0d0d; }
+    .panel-ruby textarea::-webkit-scrollbar-thumb { background: #6b1530; border-radius: 3px; }
+
+    .panel-rust textarea::-webkit-scrollbar,
+    .panel-rust pre::-webkit-scrollbar { width: 5px; height: 5px; }
+    .panel-rust textarea::-webkit-scrollbar-track { background: #1a0f05; }
+    .panel-rust textarea::-webkit-scrollbar-thumb { background: #6b3010; border-radius: 3px; }
+
+    .panel-julia textarea::-webkit-scrollbar,
+    .panel-julia pre::-webkit-scrollbar { width: 5px; height: 5px; }
+    .panel-julia textarea::-webkit-scrollbar-track { background: #0f0d1e; }
+    .panel-julia textarea::-webkit-scrollbar-thumb { background: #4a1880; border-radius: 3px; }
+
+    .panel-python pre,
+    .panel-ruby pre,
+    .panel-rust pre,
+    .panel-julia pre { overflow: hidden !important; }
+
+    /* Setup screen */
+    .setup-step { animation: fadeIn .4s ease forwards; opacity: 0; }
+    .cmd-box { background: #0a0a12; border: 1px solid #1e1e30; border-radius: 8px; padding: 12px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #4ec9f0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .copy-cmd { background: none; border: 1px solid #1e1e30; border-radius: 4px; color: #555; font-size: 10px; padding: 4px 10px; cursor: pointer; font-family: 'JetBrains Mono', monospace; transition: all .15s; }
+    .copy-cmd:hover { color: #4ec9f0; border-color: #4ec9f044; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.ok { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .status-dot.warn { background: #facc15; box-shadow: 0 0 6px #facc15; animation: blink 1.5s ease infinite; }
+    .status-dot.err { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+    .model-tag { background: #0f1a2e; border: 1px solid #1e3a5f; border-radius: 4px; padding: 3px 10px; font-size: 10px; color: #4ec9f0; cursor: pointer; transition: all .15s; }
+    .model-tag:hover { background: #1e3a5f44; border-color: #4ec9f044; }
+    .model-tag.selected { background: #4ec9f022; border-color: #4ec9f0; color: #4ec9f0; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useRef, useEffect } = React;
+
+// ─── LANGUAGE CONFIG ───
+const LANGUAGES = [
+  {
+    id: "python", label: "Python", icon: "🐍",
+    bg: "#0d1b2e", panelBg: "linear-gradient(160deg,#0d1b2e 0%,#0a1220 60%,#111827 100%)",
+    primary: "#4ec9f0", secondary: "#FFD43B", accent: "#a8d8f0", glow: "#4ec9f088",
+    border: "#1e3a5f", headerBg: "linear-gradient(135deg,#1a3a5c 0%,#0f2540 100%)",
+    textColor: "#c8e6f5", dimText: "#4a7a9b", scrollThumb: "#1e4a7a",
+    keywords: ["def","return","if","else","elif","for","while","import","from","class","print","True","False","None","in","not","and","or","lambda","yield","pass","break","continue","with","as","try","except","finally","raise","global","nonlocal","del","assert"],
+  },
+  {
+    id: "ruby", label: "Ruby", icon: "💎",
+    bg: "#1e0d0d", panelBg: "linear-gradient(160deg,#1e0d0d 0%,#160808 60%,#1a0f10 100%)",
+    primary: "#ff6b9d", secondary: "#ff3366", accent: "#ffb3c8", glow: "#ff336688",
+    border: "#4a1020", headerBg: "linear-gradient(135deg,#3d0f1f 0%,#280a14 100%)",
+    textColor: "#ffd6e0", dimText: "#7a3a4a", scrollThumb: "#6b1530",
+    keywords: ["def","end","return","if","else","elsif","unless","while","until","do","class","module","require","puts","print","true","false","nil","begin","rescue","raise","attr_accessor","self","each","map","select","inject","new","include","extend"],
+  },
+  {
+    id: "rust", label: "Rust", icon: "⚙️",
+    bg: "#1a0f05", panelBg: "linear-gradient(160deg,#1a0f05 0%,#130c04 60%,#1c1108 100%)",
+    primary: "#f4a261", secondary: "#e76f51", accent: "#ffd4a3", glow: "#e76f5188",
+    border: "#3d2010", headerBg: "linear-gradient(135deg,#3d1f08 0%,#2a1505 100%)",
+    textColor: "#fde8cc", dimText: "#7a4a20", scrollThumb: "#6b3010",
+    keywords: ["fn","let","mut","return","if","else","match","for","while","use","mod","pub","struct","enum","impl","trait","type","const","static","move","ref","in","loop","break","continue","Vec","String","Option","Result","Some","None","Ok","Err","println","format","panic","Box","Rc","Arc"],
+  },
+  {
+    id: "julia", label: "Julia", icon: "∮",
+    bg: "#0f0d1e", panelBg: "linear-gradient(160deg,#0f0d1e 0%,#0a0915 60%,#111020 100%)",
+    primary: "#b97cf3", secondary: "#4CAF50", accent: "#d4a8ff", glow: "#9558B288",
+    border: "#2a1850", headerBg: "linear-gradient(135deg,#2a1850 0%,#1a1035 100%)",
+    textColor: "#e8d4ff", dimText: "#5a3a8a", scrollThumb: "#4a1880",
+    keywords: ["function","end","return","if","else","elseif","for","while","using","import","export","module","struct","abstract","mutable","println","true","false","nothing","begin","let","do","try","catch","finally","local","global","const","type","macro","quote"],
+  },
+];
+
+const PLACEHOLDERS = {
+  python: `def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nprint(fibonacci(10))`,
+  ruby:   `def fibonacci(n)\n  return n if n <= 1\n  fibonacci(n-1) + fibonacci(n-2)\nend\n\nputs fibonacci(10)`,
+  rust:   `fn fibonacci(n: u64) -> u64 {\n    if n <= 1 { return n; }\n    fibonacci(n - 1) + fibonacci(n - 2)\n}\n\nfn main() {\n    println!("{}", fibonacci(10));\n}`,
+  julia:  `function fibonacci(n)\n    n <= 1 && return n\n    fibonacci(n-1) + fibonacci(n-2)\nend\n\nprintln(fibonacci(10))`,
+};
+
+const ELEGANCE_MODES = [
+  { id: "efficiency",  label: "Efficiency",  icon: "⚡", desc: "Optimize for speed & memory",     color: "#facc15" },
+  { id: "performance", label: "Runtime",     icon: "🚀", desc: "Minimize time complexity",         color: "#f97316" },
+  { id: "readability", label: "Readability", icon: "📖", desc: "Clear, self-documenting code",     color: "#34d399" },
+  { id: "oneliners",   label: "One-liners",  icon: "✨", desc: "Concise, expressive single lines", color: "#a78bfa" },
+];
+
+const RECOMMENDED_MODELS = [
+  { name: "codestral:22b",         label: "Codestral 22B",       note: "⭐ Best for you (16GB VRAM)" },
+  { name: "deepseek-coder-v2:16b", label: "DeepSeek Coder 16B",  note: "Excellent coder" },
+  { name: "qwen2.5-coder:14b",     label: "Qwen 2.5 Coder 14B",  note: "Fast & capable" },
+  { name: "qwen2.5-coder:7b",      label: "Qwen 2.5 Coder 7B",   note: "Lightweight" },
+  { name: "codellama:13b",         label: "CodeLlama 13B",        note: "Reliable fallback" },
+];
+
+// ─── SYNTAX HIGHLIGHTING ───
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function highlight(code, lang) {
+  if (!code) return "";
+  return code.split("\n").map(line => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("#") || trimmed.startsWith("//") || trimmed.startsWith("--")) {
+      return `<span style="color:${lang.dimText};font-style:italic;opacity:0.8">${escHtml(line)}</span>`;
+    }
+    let result = "", i = 0;
+    while (i < line.length) {
+      if (line[i] === '"' || line[i] === "'") {
+        const q = line[i]; let j = i + 1;
+        while (j < line.length && line[j] !== q) { if (line[j] === "\\") j++; j++; }
+        result += `<span style="color:${lang.secondary}">${escHtml(line.slice(i,j+1))}</span>`;
+        i = j + 1; continue;
+      }
+      if (/[0-9]/.test(line[i]) && (i === 0 || /\W/.test(line[i-1]))) {
+        let j = i;
+        while (j < line.length && /[0-9._xXbBoO]/.test(line[j])) j++;
+        result += `<span style="color:${lang.accent}">${escHtml(line.slice(i,j))}</span>`;
+        i = j; continue;
+      }
+      if (/[a-zA-Z_]/.test(line[i])) {
+        let j = i;
+        while (j < line.length && /[a-zA-Z0-9_!?]/.test(line[j])) j++;
+        const word = line.slice(i,j);
+        if (lang.keywords.includes(word)) {
+          result += `<span style="color:${lang.primary};font-weight:600;text-shadow:0 0 8px ${lang.primary}66">${escHtml(word)}</span>`;
+        } else if (line[j] === "(" || line[j] === "!") {
+          result += `<span style="color:#ffd080">${escHtml(word)}</span>`;
+        } else if (word[0] === word[0].toUpperCase() && word[0] !== word[0].toLowerCase()) {
+          result += `<span style="color:${lang.accent}">${escHtml(word)}</span>`;
+        } else {
+          result += `<span style="color:${lang.textColor}">${escHtml(word)}</span>`;
+        }
+        i = j; continue;
+      }
+      const ch = line[i];
+      if ("{}()[]".includes(ch)) result += `<span style="color:#aaa8">${escHtml(ch)}</span>`;
+      else if (":=<>!|&+-*/%^;,.".includes(ch)) result += `<span style="color:${lang.accent}88">${escHtml(ch)}</span>`;
+      else result += escHtml(ch);
+      i++;
+    }
+    return result;
+  }).join("\n");
+}
+
+// ─── DIFF ───
+function computeDiff(oldCode, newCode) {
+  const a = (oldCode || "").split("\n");
+  const b = (newCode || "").split("\n");
+  const dp = Array.from({length: a.length+1}, () => new Array(b.length+1).fill(0));
+  for (let i = a.length-1; i >= 0; i--)
+    for (let j = b.length-1; j >= 0; j--)
+      dp[i][j] = a[i]===b[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  const diff = [];
+  let i=0, j=0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i]===b[j]) { diff.push({type:"same",text:a[i]}); i++; j++; }
+    else if (j < b.length && (i >= a.length || dp[i][j+1] >= (i+1<=a.length?dp[i+1][j]:0))) { diff.push({type:"add",text:b[j]}); j++; }
+    else { diff.push({type:"del",text:a[i]}); i++; }
+  }
+  return diff;
+}
+
+// ─── LOCAL OLLAMA API ───
+async function callOllama(userPrompt, systemPrompt = "", model = "codestral:22b") {
+  const response = await fetch("http://localhost:11434/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+        { role: "user", content: userPrompt }
+      ],
+      stream: false,
+      temperature: 0.1,
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text().catch(() => response.statusText);
+    throw new Error(`Ollama error ${response.status}: ${err}`);
+  }
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content?.trim() || "";
+  if (!text) throw new Error("Empty response from model");
+  return text;
+}
+
+function extractCode(text) {
+  const match = text.match(/```[a-zA-Z]*\n?([\s\S]*?)```/);
+  return match ? match[1].trim() : text.trim();
+}
+
+async function translateCode(sourceCode, sourceLang, targetLang, model) {
+  const result = await callOllama(
+    `Translate this ${sourceLang} code to ${targetLang}. Return ONLY the translated code, no markdown, no explanation.\n\n${sourceCode}`,
+    `You are an expert polyglot programmer. Output only raw source code, nothing else.`,
+    model
+  );
+  return extractCode(result);
+}
+
+async function refineCode(code, lang, mode, model) {
+  const instructions = {
+    efficiency:  `Rewrite this ${lang} code to be maximally memory-efficient and computationally lean.`,
+    performance: `Rewrite this ${lang} code for the lowest possible runtime complexity using memoization or better algorithms.`,
+    readability: `Rewrite this ${lang} code to be maximally readable: clear names, brief inline comments, named steps.`,
+    oneliners:   `Rewrite this ${lang} code using the most concise, expressive ${lang} idioms — one-liners, functional chains, comprehensions.`,
+  };
+  const result = await callOllama(
+    `${instructions[mode]} Return ONLY the improved code, no markdown, no explanation.\n\nCode:\n${code}`,
+    `You are an expert ${lang} programmer. Output only raw source code, nothing else.`,
+    model
+  );
+  return extractCode(result);
+}
+
+async function scoreElegance(code, lang, model) {
+  const result = await callOllama(
+    `Score this ${lang} code on elegance from 0 to 100.\nCriteria: idiomatic language use, conciseness, good naming, leveraging language strengths.\nRespond with ONLY a raw JSON object on a single line:\n{"score":75,"label":"Brief reason under twelve words here"}\n\nCode:\n${code}`,
+    `You are an expert ${lang} programmer. You respond ONLY with a single-line raw JSON object. No markdown. No explanation. No backticks. Just the JSON.`,
+    model
+  );
+  try {
+    const jsonMatch = result.match(/\{[\s\S]*?"score"\s*:\s*\d+[\s\S]*?\}/);
+    if (!jsonMatch) throw new Error(`No JSON in: ${result.slice(0,100)}`);
+    const parsed = JSON.parse(jsonMatch[0]);
+    parsed.score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
+    if (!parsed.label) parsed.label = "No label provided.";
+    return parsed;
+  } catch(err) {
+    return { score: 50, label: "Score parse error." };
+  }
+}
+
+// ─── CODE EDITOR ───
+function CodeEditor({ lang, value, onChange, placeholder, diffBase, showDiff }) {
+  const textareaRef = useRef(null);
+  const preRef = useRef(null);
+  const lineNumRef = useRef(null);
+
+  const syncScroll = () => {
+    if (preRef.current && textareaRef.current) {
+      preRef.current.scrollTop = textareaRef.current.scrollTop;
+      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+    if (lineNumRef.current && textareaRef.current) {
+      lineNumRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
+  const displayCode = value || placeholder;
+  const lineCount = displayCode.split("\n").length;
+
+  let highlightedHtml;
+  if (showDiff && diffBase && value) {
+    const diff = computeDiff(diffBase, value);
+    highlightedHtml = diff.map(({type, text}) => {
+      const hl = highlight(text, lang);
+      const bg = type === "add" ? "#22c55e18" : type === "del" ? "#ef444418" : "transparent";
+      const prefix = type === "add" ? `<span style="color:#22c55e;opacity:.7;user-select:none">+ </span>` :
+                     type === "del" ? `<span style="color:#ef4444;opacity:.7;user-select:none">- </span>` :
+                                      `<span style="opacity:0;user-select:none">  </span>`;
+      return `<span style="display:block;background:${bg}">${prefix}${hl}</span>`;
+    }).join("\n");
+  } else {
+    highlightedHtml = value
+      ? highlight(value, lang)
+      : `<span style="color:${lang.dimText};opacity:0.45">${escHtml(placeholder)}</span>`;
+  }
+
+  return (
+    <div style={{position:"relative",flex:1,overflow:"hidden",display:"flex",minHeight:0}}>
+      <div ref={lineNumRef} aria-hidden="true" style={{
+        flexShrink:0, width:"36px", padding:"14px 4px",
+        fontFamily:"'JetBrains Mono',monospace", fontSize:"11px", lineHeight:"1.8",
+        color:lang.dimText, opacity:0.5, pointerEvents:"none",
+        textAlign:"right", userSelect:"none",
+        borderRight:`1px solid ${lang.border}`,
+        background:`${lang.bg}88`,
+        overflowY:"hidden",
+      }}>
+        {Array.from({length: lineCount}, (_,i) => <div key={i}>{i+1}</div>)}
+      </div>
+      <div style={{position:"relative",flex:1,overflow:"hidden",minHeight:0}}>
+        <pre ref={preRef} aria-hidden="true" style={{
+          position:"absolute",inset:0,margin:0,padding:"14px",
+          fontFamily:"'JetBrains Mono',monospace",fontSize:"13px",lineHeight:"1.8",
+          whiteSpace:"pre",overflow:"hidden",pointerEvents:"none",
+          color:lang.textColor,background:"transparent",zIndex:1,
+        }} dangerouslySetInnerHTML={{__html: highlightedHtml + "\n"}} />
+        <textarea ref={textareaRef} value={value}
+          onChange={e => onChange(e.target.value)} onScroll={syncScroll}
+          spellCheck={false} autoCorrect="off" autoCapitalize="off"
+          style={{
+            position:"absolute",inset:0,width:"100%",height:"100%",
+            margin:0,padding:"14px",
+            fontFamily:"'JetBrains Mono',monospace",fontSize:"13px",lineHeight:"1.8",
+            background:"transparent",border:"none",
+            color:"transparent",caretColor:lang.primary,
+            resize:"none",outline:"none",
+            whiteSpace:"pre",overflowX:"auto",overflowY:"auto",
+            zIndex:2,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── ELEGANCE METER ───
+function EleganceMeter({ score, lang, label }) {
+  if (score === null || score === undefined) return null;
+  const pct = Math.round(score);
+  const color = pct>=80?"#34d399":pct>=60?"#facc15":pct>=40?"#f97316":"#f87171";
+  const stars = pct>=85?"★★★★★":pct>=70?"★★★★☆":pct>=55?"★★★☆☆":pct>=35?"★★☆☆☆":"★☆☆☆☆";
+  return (
+    <div style={{padding:"8px 12px",borderTop:`1px solid ${lang.border}`,background:`${lang.bg}dd`,flexShrink:0,zIndex:1}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"5px"}}>
+        <span style={{fontSize:"8px",color:lang.dimText,letterSpacing:"2px"}}>ELEGANCE SCORE</span>
+        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+          <span style={{fontSize:"9px",color,letterSpacing:"1px"}}>{stars}</span>
+          <span style={{fontSize:"11px",fontWeight:700,color,fontFamily:"'Syne',sans-serif"}}>{pct}</span>
+          <span style={{fontSize:"8px",color:lang.dimText}}>/100</span>
+        </div>
+      </div>
+      <div style={{height:"4px",background:`${lang.border}88`,borderRadius:"2px",overflow:"hidden"}}>
+        <div style={{
+          height:"100%",width:`${pct}%`,
+          background:`linear-gradient(90deg,${color}88,${color})`,
+          borderRadius:"2px",boxShadow:`0 0 6px ${color}`,
+          transition:"width 1s cubic-bezier(.4,0,.2,1)",
+        }}/>
+      </div>
+      {label && <div style={{fontSize:"8px",color:lang.dimText,marginTop:"4px",letterSpacing:"1px",fontStyle:"italic"}}>{label}</div>}
+    </div>
+  );
+}
+
+// ─── TOAST ───
+function Toast({ toasts }) {
+  return (
+    <div style={{position:"fixed",bottom:"20px",right:"20px",zIndex:9999,display:"flex",flexDirection:"column",gap:"8px",pointerEvents:"none"}}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          padding:"8px 16px",borderRadius:"6px",
+          background:t.type==="success"?"#22c55e22":"#ef444422",
+          border:`1px solid ${t.type==="success"?"#22c55e55":"#ef444455"}`,
+          color:t.type==="success"?"#22c55e":"#ef4444",
+          fontSize:"11px",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",
+          backdropFilter:"blur(10px)",
+          animation:"toastIn .2s ease",
+        }}>{t.message}</div>
+      ))}
+    </div>
+  );
+}
+
+// ─── LOADING OVERLAY ───
+function LoadingOverlay({ lang, label, sublabel }) {
+  return (
+    <div style={{
+      position:"absolute",inset:0,zIndex:20,
+      background:`${lang.bg}ec`,backdropFilter:"blur(6px)",
+      display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",gap:"16px",
+    }}>
+      <div style={{position:"relative",width:"48px",height:"48px"}}>
+        <div style={{
+          position:"absolute",inset:0,
+          border:`3px solid ${lang.primary}22`,borderTopColor:lang.primary,
+          borderRadius:"50%",animation:"spin .7s linear infinite",
+          boxShadow:`0 0 10px ${lang.glow}`,
+        }}/>
+        <div style={{
+          position:"absolute",inset:"10px",
+          border:`2px solid ${lang.secondary}22`,borderBottomColor:lang.secondary,
+          borderRadius:"50%",animation:"spin 1.2s linear infinite reverse",
+        }}/>
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"}}>{lang.icon}</div>
+      </div>
+      <div style={{textAlign:"center"}}>
+        <div style={{color:lang.primary,fontSize:"10px",letterSpacing:"3px",fontWeight:700,textShadow:`0 0 8px ${lang.primary}`}}>{label}</div>
+        {sublabel && <div style={{color:lang.dimText,fontSize:"8px",letterSpacing:"2px",marginTop:"3px"}}>{sublabel}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── SETUP / ONBOARDING SCREEN ───
+function SetupScreen({ onComplete, initialModels }) {
+  const [ollamaOk, setOllamaOk] = useState(null);
+  const [availableModels, setAvailableModels] = useState(initialModels || []);
+  const [selectedModel, setSelectedModel] = useState("codestral:22b");
+  const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(null);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  async function checkStatus() {
+    setChecking(true);
+    try {
+      const ok = await window.electronAPI.checkOllama();
+      setOllamaOk(ok);
+      if (ok) {
+        const models = await window.electronAPI.getModels();
+        setAvailableModels(models);
+        // Auto-select best available model
+        for (const rec of RECOMMENDED_MODELS) {
+          if (models.some(m => m.startsWith(rec.name.split(":")[0]))) {
+            setSelectedModel(models.find(m => m.startsWith(rec.name.split(":")[0])));
+            break;
+          }
+        }
+      }
+    } catch(e) {
+      setOllamaOk(false);
+    }
+    setChecking(false);
+  }
+
+  function copyCmd(text, key) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  const hasAnyModel = availableModels.length > 0;
+
+  return (
+    <div style={{
+      height:"100vh", background:"#050508",
+      display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center",
+      gap:"0", overflow:"auto", padding:"20px",
+    }}>
+      {/* Ambient bg */}
+      <div style={{
+        position:"fixed",inset:0,pointerEvents:"none",
+        background:"radial-gradient(ellipse at 50% 30%, #4ec9f008 0%, transparent 60%)",
+      }}/>
+
+      <div style={{maxWidth:"640px", width:"100%", position:"relative"}}>
+        {/* Header */}
+        <div style={{textAlign:"center", marginBottom:"32px"}}>
+          <div style={{fontSize:"36px", marginBottom:"8px"}}>⟨/⟩</div>
+          <h1 style={{
+            fontFamily:"'Syne',sans-serif", fontSize:"28px", fontWeight:900, letterSpacing:"6px",
+            background:"linear-gradient(90deg,#4ec9f0 0%,#ff6b9d 33%,#f4a261 66%,#b97cf3 100%)",
+            WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent",
+            marginBottom:"6px",
+          }}>POLYGLOT</h1>
+          <p style={{color:"#303050", fontSize:"10px", letterSpacing:"4px"}}>LOCAL AI SETUP</p>
+        </div>
+
+        {/* Step 1: Ollama */}
+        <div className="setup-step" style={{animationDelay:"0ms", marginBottom:"16px",
+          background:"#0a0a14", border:"1px solid #1a1a2a", borderRadius:"12px", padding:"20px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px"}}>
+            <div className={`status-dot ${ollamaOk === null ? 'warn' : ollamaOk ? 'ok' : 'err'}`}/>
+            <span style={{color:"#ccc", fontSize:"12px", fontWeight:700, letterSpacing:"1px"}}>STEP 1 — Install Ollama</span>
+            {checking && <span style={{color:"#555", fontSize:"9px", marginLeft:"auto"}}>checking...</span>}
+            {!checking && <button onClick={checkStatus} style={{
+              marginLeft:"auto", background:"none", border:"1px solid #1e1e30",
+              color:"#555", fontSize:"9px", padding:"3px 8px", borderRadius:"4px",
+              cursor:"pointer", fontFamily:"'JetBrains Mono',monospace",
+            }}>↻ recheck</button>}
+          </div>
+
+          {ollamaOk ? (
+            <div style={{color:"#22c55e", fontSize:"11px"}}>✓ Ollama is running</div>
+          ) : (
+            <>
+              <p style={{color:"#555", fontSize:"11px", marginBottom:"12px", lineHeight:"1.6"}}>
+                Download and install Ollama from <span style={{color:"#4ec9f0"}}>ollama.com</span> — it's a one-click installer.
+                After installing, it runs automatically in your system tray.
+              </p>
+              <div style={{display:"flex", gap:"8px", flexWrap:"wrap"}}>
+                <a href="https://ollama.com/download/windows" target="_blank" rel="noreferrer"
+                  style={{
+                    display:"inline-flex", alignItems:"center", gap:"6px",
+                    background:"linear-gradient(135deg,#4ec9f0,#4ec9f088)",
+                    border:"none", borderRadius:"6px", padding:"8px 16px",
+                    color:"#000", fontSize:"11px", fontWeight:700, cursor:"pointer",
+                    textDecoration:"none", letterSpacing:"1px",
+                  }}>↓ Download for Windows</a>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Step 2: Pull model */}
+        <div className="setup-step" style={{animationDelay:"100ms", marginBottom:"16px",
+          background:"#0a0a14", border:`1px solid ${hasAnyModel ? "#22c55e33" : "#1a1a2a"}`, borderRadius:"12px", padding:"20px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px"}}>
+            <div className={`status-dot ${hasAnyModel ? 'ok' : ollamaOk ? 'warn' : 'err'}`}/>
+            <span style={{color:"#ccc", fontSize:"12px", fontWeight:700, letterSpacing:"1px"}}>STEP 2 — Download a Model</span>
+          </div>
+
+          {hasAnyModel ? (
+            <div style={{color:"#22c55e", fontSize:"11px", marginBottom:"12px"}}>
+              ✓ {availableModels.length} model{availableModels.length>1?"s":""} available: {availableModels.join(", ")}
+            </div>
+          ) : (
+            <p style={{color:"#555", fontSize:"11px", marginBottom:"12px", lineHeight:"1.6"}}>
+              Open a terminal (PowerShell or Command Prompt) and run one of these commands.
+              This downloads the model file to your PC — you only do this once.
+            </p>
+          )}
+
+          <div style={{display:"flex", flexDirection:"column", gap:"8px"}}>
+            {RECOMMENDED_MODELS.map(m => (
+              <div key={m.name}>
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"4px"}}>
+                  <span style={{fontSize:"10px", color:"#4ec9f0"}}>{m.label}</span>
+                  <span style={{fontSize:"9px", color:"#555"}}>{m.note}</span>
+                </div>
+                <div className="cmd-box">
+                  <span>ollama pull {m.name}</span>
+                  <button className="copy-cmd" onClick={() => copyCmd(`ollama pull ${m.name}`, m.name)}>
+                    {copied === m.name ? "✓ copied" : "copy"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Step 3: Select model & launch */}
+        <div className="setup-step" style={{animationDelay:"200ms", marginBottom:"16px",
+          background:"#0a0a14", border:"1px solid #1a1a2a", borderRadius:"12px", padding:"20px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px"}}>
+            <div className={`status-dot ${hasAnyModel ? 'ok' : 'warn'}`}/>
+            <span style={{color:"#ccc", fontSize:"12px", fontWeight:700, letterSpacing:"1px"}}>STEP 3 — Select Model & Launch</span>
+          </div>
+
+          {hasAnyModel ? (
+            <>
+              <p style={{color:"#555", fontSize:"11px", marginBottom:"12px"}}>Select your model:</p>
+              <div style={{display:"flex", flexWrap:"wrap", gap:"8px", marginBottom:"16px"}}>
+                {availableModels.map(m => (
+                  <button key={m} className={`model-tag ${selectedModel===m?"selected":""}`}
+                    onClick={() => setSelectedModel(m)}>{m}</button>
+                ))}
+              </div>
+              <button onClick={() => onComplete(selectedModel)} style={{
+                width:"100%", padding:"12px",
+                background:"linear-gradient(135deg,#4ec9f0,#b97cf3)",
+                border:"none", borderRadius:"8px",
+                color:"#000", fontSize:"12px", fontWeight:900,
+                cursor:"pointer", fontFamily:"'JetBrains Mono',monospace",
+                letterSpacing:"3px", boxShadow:"0 0 24px #4ec9f044",
+                transition:"all .2s",
+              }}>▶ LAUNCH APP</button>
+            </>
+          ) : (
+            <p style={{color:"#333", fontSize:"11px"}}>Complete steps 1 & 2 first, then click "recheck" above.</p>
+          )}
+        </div>
+
+        {/* Skip / force launch */}
+        <div style={{textAlign:"center"}}>
+          <button onClick={() => onComplete(selectedModel)} style={{
+            background:"none", border:"none", color:"#333",
+            fontSize:"9px", cursor:"pointer", letterSpacing:"2px",
+            fontFamily:"'JetBrains Mono',monospace",
+          }}>skip setup (use anyway)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TITLE BAR ───
+function TitleBar({ model, onSettings }) {
+  return (
+    <div className="titlebar" style={{
+      height:"32px", background:"#060610",
+      borderBottom:"1px solid #0e0e1a",
+      display:"flex", alignItems:"center",
+      padding:"0 12px",
+      flexShrink:0,
+    }}>
+      <div style={{display:"flex", alignItems:"center", gap:"8px", flex:1}}>
+        <div style={{fontSize:"12px"}}>⟨/⟩</div>
+        <span style={{
+          fontFamily:"'Syne',sans-serif", fontSize:"10px", fontWeight:900,
+          letterSpacing:"3px", color:"#333",
+        }}>POLYGLOT</span>
+        {model && <span style={{
+          fontSize:"8px", color:"#22c55e", letterSpacing:"1px",
+          background:"#22c55e11", border:"1px solid #22c55e22",
+          padding:"2px 6px", borderRadius:"3px",
+        }}>⬡ {model}</span>}
+      </div>
+
+      {/* Window controls */}
+      <div className="no-drag" style={{display:"flex", gap:"6px"}}>
+        {[
+          { label:"−", action:"minimizeWindow", color:"#facc15" },
+          { label:"□", action:"maximizeWindow", color:"#22c55e" },
+          { label:"×", action:"closeWindow",   color:"#ef4444" },
+        ].map(btn => (
+          <button key={btn.action}
+            onClick={() => window.electronAPI[btn.action]()}
+            style={{
+              width:"14px", height:"14px", borderRadius:"50%",
+              background:btn.color + "44",
+              border:`1px solid ${btn.color}66`,
+              color:btn.color, fontSize:"8px", cursor:"pointer",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              transition:"all .1s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = btn.color + "aa"}
+            onMouseLeave={e => e.currentTarget.style.background = btn.color + "44"}
+          >{btn.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ───
+function App() {
+  const [appState, setAppState] = useState("setup"); // "setup" | "app"
+  const [activeModel, setActiveModel] = useState("codestral:22b");
+
+  const [codes,          setCodes]          = useState({python:"",ruby:"",rust:"",julia:""});
+  const [prevCodes,      setPrevCodes]      = useState({});
+  const [loading,        setLoading]        = useState({});
+  const [refining,       setRefining]       = useState({});
+  const [scoring,        setScoring]        = useState({});
+  const [activeSource,   setActiveSource]   = useState(null);
+  const [activeLangs,    setActiveLangs]    = useState(["python","ruby","rust","julia"]);
+  const [eleganceScores, setEleganceScores] = useState({});
+  const [activeMode,     setActiveMode]     = useState(null);
+  const [diffMode,       setDiffMode]       = useState({});
+  const [toasts,         setToasts]         = useState([]);
+  const [copyState,      setCopyState]      = useState({});
+
+  const anyLoading  = Object.values(loading).some(Boolean);
+  const anyRefining = Object.values(refining).some(Boolean);
+  const anyScoring  = Object.values(scoring).some(Boolean);
+  const isGlobalBusy = anyLoading || anyRefining || anyScoring;
+
+  const addToast = useCallback((message, type="success") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, {id, message, type}]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 2500);
+  }, []);
+
+  const toggleLang = id => {
+    setActiveLangs(prev => {
+      if (prev.includes(id)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(l => l !== id);
+      }
+      return LANGUAGES.map(l => l.id).filter(l => prev.includes(l) || l === id);
+    });
+  };
+
+  const handleTranslate = useCallback(async (sourceLang) => {
+    let src = codes[sourceLang].trim();
+    if (!src) {
+      src = PLACEHOLDERS[sourceLang];
+      setCodes(prev => ({...prev, [sourceLang]: src}));
+    }
+    const targets = activeLangs.filter(l => l !== sourceLang);
+    setActiveSource(sourceLang);
+    setLoading(Object.fromEntries(targets.map(t => [t, true])));
+    setEleganceScores({});
+    setPrevCodes(prev => ({...prev, ...Object.fromEntries(targets.map(t => [t, codes[t]]))}));
+    setDiffMode({});
+
+    await Promise.all(targets.map(async tgt => {
+      try {
+        const result = await translateCode(src, sourceLang, tgt, activeModel);
+        setCodes(prev => ({...prev, [tgt]: result}));
+      } catch(err) {
+        setCodes(prev => ({...prev, [tgt]: `# Error translating to ${tgt}\n# ${err.message}`}));
+        addToast(`Translation to ${tgt} failed`, "error");
+      } finally {
+        setLoading(prev => ({...prev, [tgt]: false}));
+      }
+    }));
+    setActiveSource(null);
+    addToast(`Translated to ${targets.length} language${targets.length>1?"s":""}!`);
+  }, [codes, activeLangs, addToast, activeModel]);
+
+  const handleRefine = useCallback(async (langId, mode) => {
+    let code = codes[langId].trim() || PLACEHOLDERS[langId];
+    if (!codes[langId].trim()) setCodes(prev => ({...prev, [langId]: code}));
+    setPrevCodes(prev => ({...prev, [langId]: code}));
+    setDiffMode(prev => ({...prev, [langId]: false}));
+    setRefining(prev => ({...prev, [langId]: true}));
+    setEleganceScores(prev => ({...prev, [langId]: null}));
+    try {
+      const result = await refineCode(code, langId, mode, activeModel);
+      setCodes(prev => ({...prev, [langId]: result}));
+      addToast(`${langId} refined ✓`);
+    } catch(err) {
+      addToast(`Refine failed: ${err.message}`, "error");
+    } finally {
+      setRefining(prev => ({...prev, [langId]: false}));
+    }
+  }, [codes, addToast, activeModel]);
+
+  const handleRefineAll = useCallback(async (mode) => {
+    setActiveMode(mode);
+    const langs = activeLangs;
+    setPrevCodes(Object.fromEntries(langs.map(l => [l, codes[l]])));
+    setDiffMode({});
+    setRefining(Object.fromEntries(langs.map(l => [l, true])));
+    setEleganceScores({});
+    await Promise.all(langs.map(async langId => {
+      try {
+        let code = codes[langId].trim() || PLACEHOLDERS[langId];
+        if (!codes[langId].trim()) setCodes(prev => ({...prev, [langId]: code}));
+        const result = await refineCode(code, langId, mode, activeModel);
+        setCodes(prev => ({...prev, [langId]: result}));
+      } catch(err) {
+        addToast(`Refine ${langId} failed`, "error");
+      } finally {
+        setRefining(prev => ({...prev, [langId]: false}));
+      }
+    }));
+    setActiveMode(null);
+    addToast("All panels refined ✓");
+  }, [codes, activeLangs, addToast, activeModel]);
+
+  const handleScoreAll = useCallback(async () => {
+    const langs = activeLangs;
+    setScoring(Object.fromEntries(langs.map(l => [l, true])));
+    setEleganceScores({});
+
+    const scoreOne = async (langId) => {
+      let code = codes[langId].trim() || PLACEHOLDERS[langId];
+      if (!codes[langId].trim()) setCodes(prev => ({...prev, [langId]: code}));
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        try {
+          const result = await scoreElegance(code, langId, activeModel);
+          setEleganceScores(prev => ({...prev, [langId]: result}));
+          return;
+        } catch(err) {
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt+1)));
+          else addToast(`Score ${langId} failed`, "error");
+        }
+      }
+    };
+
+    await Promise.all(langs.map((langId, i) =>
+      new Promise(r => setTimeout(r, i * 400)).then(() => scoreOne(langId))
+    ));
+    setScoring(Object.fromEntries(langs.map(l => [l, false])));
+    addToast("Scoring complete ✓");
+  }, [codes, activeLangs, addToast, activeModel]);
+
+  const handleCopy = useCallback((langId) => {
+    navigator.clipboard.writeText(codes[langId]).then(() => {
+      setCopyState(prev => ({...prev, [langId]: true}));
+      setTimeout(() => setCopyState(prev => ({...prev, [langId]: false})), 1200);
+      addToast(`${langId} copied!`);
+    });
+  }, [codes, addToast]);
+
+  const toggleDiff = (langId) => {
+    setDiffMode(prev => ({...prev, [langId]: !prev[langId]}));
+  };
+
+  function handleLaunch(model) {
+    setActiveModel(model);
+    setAppState("app");
+  }
+
+  if (appState === "setup") {
+    return <SetupScreen onComplete={handleLaunch} />;
+  }
+
+  const visibleLangs = LANGUAGES.filter(l => activeLangs.includes(l.id));
+  const cols = visibleLangs.length;
+
+  return (
+    <div style={{height:"100vh",background:"#050508",fontFamily:"'JetBrains Mono',monospace",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <TitleBar model={activeModel} />
+
+      {/* HEADER */}
+      <div style={{
+        background:"#060610",
+        borderBottom:"1px solid #111",
+        padding:"8px 16px",
+        display:"flex",alignItems:"center",gap:"12px",
+        flexShrink:0,position:"relative",overflow:"hidden",
+      }}>
+        <div style={{
+          position:"absolute",inset:0,
+          background:"linear-gradient(270deg,#4ec9f012,#ff336612,#f4a26112,#b97cf312)",
+          backgroundSize:"400% 400%",
+          animation:"shimmer 10s ease infinite",
+          pointerEvents:"none",
+        }}/>
+
+        <div style={{display:"flex",alignItems:"center",gap:"10px",position:"relative",flexShrink:0}}>
+          <div style={{fontSize:"20px",filter:"drop-shadow(0 0 8px #fff4)"}}>⟨/⟩</div>
+          <div>
+            <h1 style={{
+              fontFamily:"'Syne',sans-serif",fontSize:"15px",fontWeight:900,letterSpacing:"4px",
+              background:"linear-gradient(90deg,#4ec9f0 0%,#ff6b9d 33%,#f4a261 66%,#b97cf3 100%)",
+              WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+            }}>POLYGLOT</h1>
+            <p style={{fontSize:"7px",color:"#303050",letterSpacing:"3px"}}>TRANSFORMER · LOCAL</p>
+          </div>
+        </div>
+
+        <div style={{width:"1px",height:"28px",background:"#1a1a30",flexShrink:0}}/>
+
+        {/* Elegance mode buttons */}
+        <div style={{display:"flex",gap:"5px",position:"relative"}}>
+          {ELEGANCE_MODES.map(m => (
+            <button key={m.id} className="mode-btn"
+              onClick={() => handleRefineAll(m.id)}
+              disabled={isGlobalBusy}
+              title={m.desc}
+              style={{
+                padding:"5px 10px",
+                background:activeMode===m.id?`${m.color}33`:"#0f0f1a",
+                border:`1px solid ${activeMode===m.id?m.color:"#1e1e30"}`,
+                borderRadius:"6px",
+                color:isGlobalBusy?"#333":m.color,
+                fontSize:"10px",cursor:isGlobalBusy?"not-allowed":"pointer",
+                fontFamily:"'JetBrains Mono',monospace",fontWeight:600,
+                display:"flex",alignItems:"center",gap:"5px",
+                boxShadow:activeMode===m.id?`0 0 10px ${m.color}44`:"none",
+              }}>
+              <span>{m.icon}</span><span>{m.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Score button */}
+        <button className="score-btn"
+          onClick={handleScoreAll} disabled={isGlobalBusy}
+          style={{
+            padding:"5px 12px",
+            background:"linear-gradient(135deg,#7c3aed,#4f46e5)",
+            border:"none",borderRadius:"6px",
+            color:"#fff",fontSize:"10px",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,
+            cursor:isGlobalBusy?"not-allowed":"pointer",
+            letterSpacing:"1px",boxShadow:"0 0 14px #7c3aed66",
+            display:"flex",alignItems:"center",gap:"6px",
+            opacity:isGlobalBusy?0.4:1,
+          }}>
+          <span>🏆</span><span>SCORE</span>
+        </button>
+
+        <div style={{flex:1}}/>
+
+        {/* Model indicator */}
+        <div style={{
+          fontSize:"8px", color:"#22c55e", letterSpacing:"1px",
+          background:"#22c55e11", border:"1px solid #22c55e22",
+          padding:"4px 10px", borderRadius:"4px", flexShrink:0,
+        }}>⬡ {activeModel}</div>
+
+        {/* Language toggles */}
+        <div style={{display:"flex",gap:"4px",position:"relative"}}>
+          {LANGUAGES.map(l => {
+            const active = activeLangs.includes(l.id);
+            return (
+              <button key={l.id} className="lang-toggle"
+                onClick={() => toggleLang(l.id)}
+                title={active?`Hide ${l.label}`:`Show ${l.label}`}
+                style={{
+                  padding:"4px 10px",
+                  background:active?`linear-gradient(135deg,${l.bg},${l.headerBg.split(",")[1]||l.bg})`:"#0a0a12",
+                  border:`1.5px solid ${active?l.primary:"#1a1a2a"}`,
+                  borderRadius:"6px",
+                  color:active?l.primary:"#333",
+                  fontSize:"9px",fontWeight:700,cursor:"pointer",letterSpacing:"1px",
+                  display:"flex",alignItems:"center",gap:"4px",
+                  boxShadow:active?`0 0 12px ${l.glow}55`:"none",
+                  opacity:active?1:0.5,
+                }}>
+                <span>{l.icon}</span><span>{l.label.toUpperCase()}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* COLUMNS */}
+      <div style={{
+        display:"grid",
+        gridTemplateColumns:`repeat(${cols},1fr)`,
+        flex:1,overflow:"hidden",minHeight:0,
+      }}>
+        {visibleLangs.map((lang, idx) => {
+          const isLoading  = loading[lang.id];
+          const isRefining = refining[lang.id];
+          const isScoring  = scoring[lang.id];
+          const busy       = isLoading || isRefining || isScoring;
+          const isSource   = activeSource === lang.id;
+          const hasCode    = codes[lang.id].trim().length > 0;
+          const canRun     = !isGlobalBusy;
+          const lines      = codes[lang.id] ? codes[lang.id].split("\n").length : 0;
+          const chars      = codes[lang.id].length;
+          const escore     = eleganceScores[lang.id];
+          const hasDiff    = prevCodes[lang.id] && codes[lang.id] && prevCodes[lang.id] !== codes[lang.id];
+          const showDiff   = diffMode[lang.id] && hasDiff;
+          const copied     = copyState[lang.id];
+
+          let addedLines = 0, removedLines = 0;
+          if (hasDiff) {
+            const diff = computeDiff(prevCodes[lang.id], codes[lang.id]);
+            addedLines   = diff.filter(d => d.type==="add").length;
+            removedLines = diff.filter(d => d.type==="del").length;
+          }
+
+          return (
+            <div key={lang.id} className={`lang-col panel-${lang.id}`}
+              style={{
+                display:"flex",flexDirection:"column",
+                background:lang.panelBg,
+                borderRight:idx<cols-1?`1px solid ${lang.border}`:"none",
+                animationDelay:`${idx*80}ms`,
+                position:"relative",overflow:"hidden",
+                minHeight:0,height:"100%",
+              }}>
+              <div style={{
+                position:"absolute",top:"-80px",left:"50%",transform:"translateX(-50%)",
+                width:"280px",height:"280px",
+                background:`radial-gradient(circle,${lang.glow} 0%,transparent 65%)`,
+                opacity:isSource?0.5:busy?0.35:0.15,
+                transition:"opacity .5s ease",
+                pointerEvents:"none",zIndex:0,
+                animation:busy?"gradientShift 2s ease infinite":"none",
+              }}/>
+
+              {/* PANEL HEADER */}
+              <div style={{
+                background:lang.headerBg,
+                borderBottom:`2px solid ${lang.primary}44`,
+                padding:"8px 12px",
+                display:"flex",alignItems:"center",justifyContent:"space-between",
+                flexWrap:"wrap",gap:"6px",
+                flexShrink:0,position:"relative",zIndex:1,
+              }}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
+                  <div style={{
+                    width:"30px",height:"30px",
+                    background:`radial-gradient(circle at 30% 30%,${lang.primary}44,${lang.bg})`,
+                    border:`1.5px solid ${lang.primary}55`,
+                    borderRadius:"8px",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:"14px",boxShadow:`0 0 12px ${lang.glow}`,
+                    animation:isSource?"pulse 1.2s ease infinite":"none",
+                  }}>{lang.icon}</div>
+                  <div>
+                    <div style={{
+                      fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:"11px",
+                      color:lang.primary,letterSpacing:"2px",
+                      textShadow:`0 0 10px ${lang.primary}66`,
+                    }}>{lang.label.toUpperCase()}</div>
+                    <div style={{fontSize:"8px",color:lang.dimText,letterSpacing:"1.5px",display:"flex",gap:"6px"}}>
+                      <span>{hasCode?`${lines}L · ${chars}C`:"EMPTY"}</span>
+                      {hasDiff && (
+                        <span>
+                          <span style={{color:"#22c55e"}}>+{addedLines}</span>{" "}
+                          <span style={{color:"#ef4444"}}>-{removedLines}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:"4px",alignItems:"center",flexWrap:"wrap"}}>
+                  {hasDiff && (
+                    <button className="icon-btn"
+                      onClick={() => toggleDiff(lang.id)}
+                      style={{
+                        border:`1px solid ${showDiff?lang.primary:lang.border}`,
+                        borderRadius:"4px",
+                        color:showDiff?lang.primary:lang.dimText,
+                        fontSize:"9px",padding:"3px 6px",
+                        fontFamily:"'JetBrains Mono',monospace",
+                        background:showDiff?`${lang.primary}18`:"transparent",
+                      }}>
+                      {showDiff?"≡ SRC":"± DIFF"}
+                    </button>
+                  )}
+
+                  <select
+                    value=""
+                    onChange={e => { if(e.target.value) handleRefine(lang.id, e.target.value); }}
+                    disabled={isGlobalBusy}
+                    style={{
+                      background:`${lang.bg}cc`,
+                      border:`1px solid ${lang.border}`,
+                      color:lang.dimText,fontSize:"9px",
+                      padding:"3px 5px",borderRadius:"4px",
+                      cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",outline:"none",
+                    }}>
+                    <option value="">✦ refine…</option>
+                    {ELEGANCE_MODES.map(m => (
+                      <option key={m.id} value={m.id}>{m.icon} {m.label}</option>
+                    ))}
+                  </select>
+
+                  {hasCode && (
+                    <button className={`icon-btn${copied?" copy-flash":""}`}
+                      onClick={() => handleCopy(lang.id)}
+                      style={{
+                        border:`1px solid ${copied?"#22c55e55":lang.border}`,
+                        color:copied?"#22c55e":lang.dimText,
+                        fontSize:"11px",padding:"3px 7px",borderRadius:"4px",
+                      }}
+                      title="Copy code">
+                      {copied?"✓":"⎘"}
+                    </button>
+                  )}
+
+                  {hasDiff && (
+                    <button className="icon-btn"
+                      onClick={() => {
+                        setCodes(prev => ({...prev, [lang.id]: prevCodes[lang.id]}));
+                        setPrevCodes(prev => {const n={...prev}; delete n[lang.id]; return n;});
+                        setDiffMode(prev => ({...prev, [lang.id]: false}));
+                        addToast(`${lang.id} reverted`);
+                      }}
+                      style={{
+                        border:`1px solid ${lang.border}`,
+                        color:lang.dimText,fontSize:"10px",
+                        padding:"3px 7px",borderRadius:"4px",
+                      }}>↩</button>
+                  )}
+
+                  <button className="run-btn"
+                    onClick={() => handleTranslate(lang.id)}
+                    disabled={!canRun}
+                    style={{
+                      padding:"4px 12px",
+                      background:canRun?`linear-gradient(135deg,${lang.primary},${lang.secondary})`:`${lang.border}88`,
+                      border:"none",borderRadius:"5px",
+                      color:canRun?"#000":lang.dimText,
+                      fontSize:"9px",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,
+                      cursor:canRun?"pointer":"not-allowed",
+                      letterSpacing:"1.5px",
+                      boxShadow:canRun?`0 0 16px ${lang.glow}`:"none",
+                    }}>
+                    {isSource?"● RUN":"▶ RUN"}
+                  </button>
+                </div>
+              </div>
+
+              {/* EDITOR */}
+              <div style={{flex:1,position:"relative",overflow:"hidden",zIndex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
+                {busy && (
+                  <LoadingOverlay
+                    lang={lang}
+                    label={isScoring?"SCORING":isRefining?"REFINING":"TRANSLATING"}
+                    sublabel={isRefining?(ELEGANCE_MODES.find(m=>m.id===activeMode)?.label||""):activeModel}
+                  />
+                )}
+                <CodeEditor
+                  lang={lang}
+                  value={codes[lang.id]}
+                  onChange={v => {
+                    setCodes(prev => ({...prev, [lang.id]: v}));
+                    setEleganceScores(prev => ({...prev, [lang.id]: null}));
+                  }}
+                  placeholder={PLACEHOLDERS[lang.id]}
+                  diffBase={prevCodes[lang.id]}
+                  showDiff={showDiff}
+                />
+              </div>
+
+              <EleganceMeter score={escore?.score??null} lang={lang} label={escore?.label}/>
+
+              {/* FOOTER */}
+              <div style={{
+                padding:"4px 12px",
+                borderTop:`1px solid ${lang.border}`,
+                background:`${lang.bg}cc`,
+                display:"flex",justifyContent:"space-between",alignItems:"center",
+                flexShrink:0,zIndex:1,
+              }}>
+                <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+                  <div style={{
+                    width:"5px",height:"5px",borderRadius:"50%",
+                    background:hasCode?lang.primary:lang.dimText,
+                    boxShadow:hasCode?`0 0 5px ${lang.glow}`:"none",
+                  }}/>
+                  <span style={{fontSize:"8px",color:lang.dimText,letterSpacing:"1.5px"}}>{lang.id.toUpperCase()}</span>
+                </div>
+                {hasCode && (
+                  <button
+                    onClick={() => {
+                      setCodes(prev => ({...prev, [lang.id]:""}));
+                      setEleganceScores(prev => ({...prev, [lang.id]:null}));
+                      setPrevCodes(prev => {const n={...prev};delete n[lang.id];return n;});
+                      setDiffMode(prev => ({...prev, [lang.id]:false}));
+                    }}
+                    style={{background:"none",border:"none",color:lang.dimText,fontSize:"8px",cursor:"pointer",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace"}}>
+                    CLEAR ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Toast toasts={toasts}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
